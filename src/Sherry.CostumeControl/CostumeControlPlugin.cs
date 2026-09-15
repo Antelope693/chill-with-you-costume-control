@@ -9,6 +9,7 @@ using Bulbul;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 namespace Sherry.CostumeControl
@@ -27,6 +28,7 @@ namespace Sherry.CostumeControl
 
         private static readonly System.Random Random = new System.Random();
         private static ManualLogSource Log = null!;
+        private static Font? UiFont;
         private static CostumeChangeService? CurrentService;
         private static Bulbul.HeroineService? CurrentHeroineService;
         private static string ConfigFilePath = string.Empty;
@@ -36,6 +38,8 @@ namespace Sherry.CostumeControl
         private static float ToastEndTime;
         private static string ToastText = string.Empty;
         private static bool HasLoggedUpdate;
+        private static bool HasReportedUiRect;
+        private static int LastHotkeyFrame = -1;
         private static bool IsWindowVisible;
         private static readonly string[] RecentLogs = new string[10];
         private static int RecentLogCount;
@@ -47,8 +51,10 @@ namespace Sherry.CostumeControl
         private static Text? LogText;
         private static Text? PageText;
         private static int CurrentPageIndex;
-        private static Vector2 TogglePosition = new Vector2(-34f, -222f);
-        private static Vector2 PanelPosition = new Vector2(-92f, -150f);
+        // CanvasScaler 会把 anchoredPosition 按分辨率放大（1920 宽约 2.4 倍），
+        // 原始默认值 -222 / -150 会被放大成 500+ 像素偏移，把 UI 顶出屏幕外。
+        private static Vector2 TogglePosition = new Vector2(-40f, -80f);
+        private static Vector2 PanelPosition = new Vector2(-40f, -20f);
 
         private void Awake()
         {
@@ -57,36 +63,89 @@ namespace Sherry.CostumeControl
             EnsureConfigFile();
             LoadConfig();
             new Harmony("sherry.chillwithyou.costumecontrol").PatchAll(typeof(CostumeControlPlugin).Assembly);
+            // 插件自身的 MonoBehaviour 可能被游戏在场景切换时销毁，导致 Update 停止。
+            // 本游戏用 URP 渲染管线，Camera.onPostRender 不会触发，必须用 RenderPipelineManager。
+            Camera.onPostRender += OnCameraPostRender;
+            RenderPipelineManager.endCameraRendering += OnEndCameraRendering;
+
+
             AddLog("衣服控制插件已加载。F7 显示/隐藏面板。");
+            ToastText = "Sherry Costume Control loaded - press F7 for the costume panel";
+            ToastEndTime = Time.realtimeSinceStartup + 20f;
         }
 
-        private void Update()
+        private static void OnCameraPostRender(Camera camera)
         {
+            PollHotkeys();
+        }
+
+        private static void OnEndCameraRendering(ScriptableRenderContext context, Camera camera)
+        {
+            PollHotkeys();
+        }
+
+        private static void PollHotkeys()
+        {
+            if (Time.frameCount == LastHotkeyFrame)
+            {
+                return;
+            }
+
+            LastHotkeyFrame = Time.frameCount;
+
             if (!HasLoggedUpdate)
             {
                 HasLoggedUpdate = true;
-                Log.LogInfo("衣服控制插件 Update 已启动。");
+                Log?.LogInfo("热键轮询已启动（渲染事件）。");
+            }
+
+            // UI 刚创建时 CanvasScaler 尚未生效，延后一帧才拿得到真实屏幕位置
+            if (!HasReportedUiRect && UiRoot != null)
+            {
+                HasReportedUiRect = true;
+                ReportUiRect();
             }
 
             if (Input.GetKeyDown(KeyCode.F10))
             {
                 ReloadConfigByUser();
             }
-
-            if (Input.GetKeyDown(KeyCode.F7))
+            else if (Input.GetKeyDown(KeyCode.F7))
             {
                 SetPanelVisible(!IsWindowVisible);
             }
-
-            if (Input.GetKeyDown(KeyCode.F8))
+            else if (Input.GetKeyDown(KeyCode.F8))
             {
                 RandomNextByUser();
             }
-
-            if (Input.GetKeyDown(KeyCode.F9))
+            else if (Input.GetKeyDown(KeyCode.F9))
             {
                 FixCurrentByUser();
             }
+        }
+
+        private static void ReportUiRect()
+        {
+            Log?.LogInfo("衣装面板：屏幕 " + Screen.width + "x" + Screen.height);
+
+            if (ToggleObject != null)
+            {
+                var corners = new Vector3[4];
+                ToggleObject.GetComponent<RectTransform>().GetWorldCorners(corners);
+                Log?.LogInfo("衣装按钮实际屏幕位置 左下=" + corners[0].ToString("0") + " 右上=" + corners[2].ToString("0"));
+            }
+
+            if (PanelObject != null)
+            {
+                var corners = new Vector3[4];
+                PanelObject.GetComponent<RectTransform>().GetWorldCorners(corners);
+                Log?.LogInfo("衣装面板实际屏幕位置 左下=" + corners[0].ToString("0") + " 右上=" + corners[2].ToString("0"));
+            }
+        }
+
+        private void Update()
+        {
+            PollHotkeys();
         }
 
         private void OnGUI()
@@ -162,6 +221,7 @@ namespace Sherry.CostumeControl
                 SaveConfig();
             });
 
+
             var title = CreateText("Title", panel, new Vector2(14f, -12f), new Vector2(300f, 28f), "衣装", 20, TextAnchor.MiddleLeft);
             title.color = new Color(1f, 0.88f, 0.96f, 1f);
 
@@ -229,8 +289,8 @@ namespace Sherry.CostumeControl
 
         private static void ResetUiPositions()
         {
-            TogglePosition = new Vector2(-34f, -222f);
-            PanelPosition = new Vector2(-92f, -150f);
+            TogglePosition = new Vector2(-40f, -80f);
+            PanelPosition = new Vector2(-40f, -20f);
 
             if (ToggleObject != null)
             {
@@ -322,7 +382,7 @@ namespace Sherry.CostumeControl
         {
             var rectTransform = CreateRect(name, parent, anchoredPosition, size);
             var text = rectTransform.gameObject.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            text.font = GetUiFont();
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.color = Color.white;
@@ -330,6 +390,37 @@ namespace Sherry.CostumeControl
             text.verticalOverflow = VerticalWrapMode.Truncate;
             text.text = content;
             return text;
+        }
+
+        private static Font? GetUiFont()
+        {
+            if (UiFont != null)
+            {
+                return UiFont;
+            }
+
+            var candidates = new[] { "Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "SimSun", "Arial" };
+            foreach (var name in candidates)
+            {
+                try
+                {
+                    var font = Font.CreateDynamicFontFromOSFont(name, 16);
+                    if (font != null)
+                    {
+                        font.hideFlags = HideFlags.HideAndDontSave;
+                        UnityEngine.Object.DontDestroyOnLoad(font);
+                        UiFont = font;
+                        return UiFont;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log?.LogDebug("字体创建失败 " + name + "：" + ex.Message);
+                }
+            }
+
+            UiFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            return UiFont;
         }
 
         private static GameObject CreateButton(Transform parent, Vector2 anchoredPosition, Vector2 size, string label, Action onClick)
