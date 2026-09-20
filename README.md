@@ -1,3 +1,13 @@
+> **注意**
+>
+> 这里是 [1219323890/chill-with-you-costume-control](https://github.com/1219323890/chill-with-you-costume-control) 的 fork。
+> 原仓库有一阵子没更新了，插件装好后游戏里看不到衣装按钮、F7~F10 也没反应，查下来是三个问题：
+> 按钮坐标被 CanvasScaler 放大后跑到了屏幕外、这个游戏是 URP 管线导致插件的 Update 不会被调用、内置字体取不到中文。
+>
+> 修复已提 [PR #1](https://github.com/1219323890/chill-with-you-costume-control/pull/1)，代码在 `fix/ui-offscreen-and-hotkeys` 分支。
+> 想直接用的话，[Releases](https://github.com/Antelope693/chill-with-you-costume-control/releases) 里有编译好的 DLL。
+> 原作者合并之后这个 fork 就可以删了。
+
 # Chill with You 衣服控制插件
 
 这是一个用于《Chill with You Lo-Fi Story》的 BepInEx 插件，用来固定或手动切换角色当天穿的衣服。
