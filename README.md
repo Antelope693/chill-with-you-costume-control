@@ -144,6 +144,8 @@ Sherry Costume Control
 
 如果日志里没有这行，通常是 DLL 没放到 `BepInEx\plugins`，或者 BepInEx 没装成功。
 
+如果日志里有 `Sherry Costume Control`，但最后一行停在 `Chainloader startup complete`，之后什么都没有，看下面《常见问题》第 5 条。
+
 ## 使用方法
 
 点击游戏里的 `衣装` 按钮会打开面板。`衣装` 按钮和面板都可以直接拖动，拖到顺手的位置后会自动保存。
@@ -286,6 +288,30 @@ Sherry Costume Control
 ```
 
 如果还是无法启动，再检查 BepInEx 是否安装正确。
+
+### 5. 用着用着插件突然失效了
+
+表现是：游戏能正常进，但右侧的 `衣装` 按钮不见了，F7~F10 也没反应，插件和 BepInEx 都没动过。
+
+先看这个文件的修改时间：
+
+```text
+<游戏目录>\BepInEx\LogOutput.log
+```
+
+如果游戏这次明明启动过，文件的时间却没变，那就是 BepInEx 这次压根没被加载，问题不在插件。
+
+原因在启动顺序上。这个游戏每次启动都会让 Steam 把自己重启一次，真正在跑的是第二个进程。而 Doorstop 注入成功后会往进程环境里写一批 `DOORSTOP_*` 变量，一旦这些变量被 Steam 继承（常见于之前在 Steam 没运行时双击过 exe、游戏把 Steam 拉起来了），第二个进程就不满足注入条件，Doorstop 会直接跳过，而且不报任何错。
+
+处理办法：
+
+1. 把 Steam 完全退出，确认任务管理器里 `steam.exe`、`steamwebhelper.exe` 都不在了；
+2. 从开始菜单重新打开 Steam；
+3. 从 Steam 库里启动游戏。
+
+Releases 里的一键包已经把 `doorstop_config.ini` 的 `ignore_disable_switch` 打开了，能避开其中一部分情况。
+
+另外，Steam 的「验证游戏文件完整性」会把 `winhttp.dll`、`doorstop_config.ini`、`BepInEx` 当成多余文件清掉，点之前先想一下。
 
 ## 从源码编译
 
